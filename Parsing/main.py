@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional
+from pydantic import BaseModel, Field, EmailStr, validator
+from typing import Optional, Literal
 from datetime import date
 
 
@@ -30,7 +30,7 @@ class Birthday(User):
 
 class UserRegistration(User):
     username: str = Field("user", max_length=30)
-    password: str = Field("password1234")
+    password: str = Field("password1234", ge=8)
     email: EmailStr = Field()
 
 
@@ -49,7 +49,17 @@ class ShippingAddress(BaseModel):
 class PaymentInfo(BaseModel):
     customer: User = Field()
     amount: float = Field(max_digits=6)
-    payment_type: str = Field(max_length=30)  # готівка, картка
+    payment_type: Literal["card", "cash"] = Field(...)  # готівка, картка
+
+
+class CardInfo(BaseModel):
+    card_number: str = Field(...)
+    expiration_date: date = Field(...)
+    cvv: int = Field(...)
+
+
+class SuccessMessageCash(BaseModel):
+    message: str = "Оплата готівкою пройшла успішно"
 
 
 class ImageUploadMetadata(BaseModel):
@@ -57,7 +67,46 @@ class ImageUploadMetadata(BaseModel):
     file_type: str = Field(max_length=10)  # .img, .png
 
 
-# class Login(User):
-@app.get("/main/")
-async def main():
-    ...
+class CorporateEmail(BaseModel):
+    email: EmailStr = Field(max_length=40)
+
+    @validator("email")
+    def corporate_only(cls, email):
+        if not email.endswith("goiteens.com"):
+            raise ValueError("Е-пошта має закінчуватися на `goiteens.com`")
+        return email
+
+
+class DateModel(BaseModel):
+    created_at: date = Field(...)
+
+    @validator("created_at")
+    def not_future(cls, created_at):
+        if created_at > date.today():
+            raise ValueError("Дата не може бути майбутньою")
+        return created_at
+
+
+@app.post('/pay')
+async def payment_process(payment: PaymentInfo):
+    if payment.payment_type == "cash":
+        return SuccessMessageCash()
+    elif payment.type == "card":
+        card_info = CardInfo
+
+
+@app.get("/get_item")
+async def get_item(item: Item):
+    return {"name": item.name, "price": item.price, "amount": item.amount, "is_available": item.is_available}
+
+
+@app.post("/check_password")
+async def check_password(user: UserRegistration):
+    numbers = "1234567890"
+    high_letters = "QWERTYUIOPASDFGHJKLZXCVBNM"
+    if not any(number in user.password for number in numbers):
+        raise ValueError("Пароль має містити хоча б одну цифру")
+    if not any(letter in user.password for letter in high_letters):
+        raise ValueError("Пароль має містити хоча б одну велику букву")
+    return "Ваш пароль надійний"
+
